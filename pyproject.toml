@@ -1,0 +1,11 @@
+[project]
+name = "mini-flow"
+version = "0.1.0"
+description = "LangGraph research/summarize/critique demo agent on local Ollama, traced with Langfuse"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=0.2",
+    "langchain-ollama>=0.2",
+    "langfuse>=2.50",
+    "python-dotenv>=1.0",
+]
