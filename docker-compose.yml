@@ -1,3 +1,29 @@
+# Langfuse NO está acá a propósito: corre en su propio stack (repo oficial,
+# imágenes :4) y publica :3000 en el host. Los servicios de la app le llegan por
+# host.docker.internal.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/app.Dockerfile
+  env_file:
+    # required:false para que un clone sin .env no rompa `docker compose up`.
+    # Sin keys la app arranca igual, solo no trazan los requests.
+    - path: .env
+      required: false
+  environment:
+    # Ganan sobre .env: adentro de compose se usan los hostnames de los servicios,
+    # mientras que .env tiene los valores para correr en el host con `uv run`.
+    OLLAMA_BASE_URL: http://ollama:11434
+    CHROMA_HOST: chroma
+    CHROMA_PORT: "8000"
+  extra_hosts:
+    # Para llegar al Langfuse del host. En Docker Desktop suele venir solo;
+    # explícito funciona igual bajo Linux/WSL puro.
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ./data:/app/data:ro
+
 services:
   ollama:
     image: ollama/ollama:latest
@@ -5,17 +31,78 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      # Sin esto Ollama serializa y el fan-out paralelo del grader no gana nada.
+      OLLAMA_NUM_PARALLEL: "4"
+      # Chat + embeddings cargados a la vez (~2.3 GB juntos).
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      # Recargar un modelo en CPU cuesta segundos; que quede caliente.
+      OLLAMA_KEEP_ALIVE: 30m
     healthcheck:
       test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 5s
-      retries: 10
+      timeout: 5s
+      retries: 20
 
   ollama-pull:
     image: ollama/ollama:latest
     depends_on:
       ollama:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c", "OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:3b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+    # `ollama pull` sobre un modelo ya presente igual consulta el registry y falla
+    # sin red: el guard lo evita. `$$` escapa la interpolación de compose.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'for m in "$$CHAT_MODEL" "$$EMBED_MODEL"; do
+           ollama list | grep -q "^$$m" || ollama pull "$$m";
+         done'
+    restart: "no"
+
+  chroma:
+    image: chromadb/chroma:1.5.3
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    # Sin healthcheck a propósito: la imagen no garantiza traer curl ni wget, y un
+    # healthcheck apuntando a un binario ausente cuelga toda la cadena de
+    # depends_on. `scripts/bootstrap.py` espera a Chroma desde Python.
+
+  bootstrap:
+    <<: *app
+    depends_on:
+      chroma:
+        condition: service_started
+      ollama-pull:
+        condition: service_completed_successfully
+    command: ["uv", "run", "--frozen", "--no-dev", "scripts/bootstrap.py"]
+    restart: "no"
+
+  api:
+    <<: *app
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # python en vez de curl: la imagen es python:3.12-slim, no trae curl.
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
 volumes:
   ollama_data:
+  chroma_data:

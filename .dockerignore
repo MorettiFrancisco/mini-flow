@@ -1,0 +1,16 @@
+# .env primero: `COPY . .` lo hornearía dentro de la imagen con las keys adentro.
+# Las variables entran en runtime por env_file, no en el build.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.gitattributes
+.venv
+__pycache__/
+*.py[codz]
+.pytest_cache/
+.ruff_cache/
+README.md
+LICENSE

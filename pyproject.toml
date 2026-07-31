@@ -1,11 +1,27 @@
 [project]
 name = "mini-flow"
-version = "0.1.0"
-description = "LangGraph research/summarize/critique demo agent on local Ollama, traced with Langfuse"
-requires-python = ">=3.10"
+version = "0.2.0"
+description = "RAG autocorrectivo en LangGraph sobre Ollama, instrumentado de punta a punta con Langfuse"
+requires-python = ">=3.11"
 dependencies = [
-    "langgraph>=0.2",
-    "langchain-ollama>=0.2",
-    "langfuse>=2.50",
-    "python-dotenv>=1.0",
+    "langgraph>=1,<2",
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.3",
+    "langchain-chroma>=0.2",
+    "langchain-text-splitters>=0.3",
+    "langfuse>=4,<5",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2",
+    "python-dotenv>=1",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# App, no librería: uv no intenta buildear ni instalar el proyecto.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
